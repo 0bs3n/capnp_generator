@@ -1,0 +1,4 @@
+build/
+dist/
+capnp_generator.egg-info
+capnp_generator/__pycache__
