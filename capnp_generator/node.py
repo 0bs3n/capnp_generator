@@ -197,11 +197,8 @@ class StructNode(Node):
             pass
         elif typestring == "enum":
             id = field.slot.type.enum.typeId
-            try:
-                typedef = self.enums_by_id[id]
-                enumerants = list(typedef.schema.enumerants.keys())
-            except KeyError:
-                enumerants = list(self.node.schema.fields[field.name].schema.enumerants.keys())
+            typedef = self.enums_by_id[id]
+            enumerants = list(typedef.schema.enumerants.keys())
             setattr(msg, fieldname, self.rng.getEnum(enumerants))
 
     def generate_list(self, memberType, length):
