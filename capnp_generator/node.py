@@ -1,6 +1,8 @@
 import capnp
 import pprint
-from .rng import RNG
+import os
+import capnp.includes
+from rng import RNG
 
 """
 For the top level schema, the list of all top-level defined structs, 
@@ -68,6 +70,37 @@ class Node:
         return reprstr
 
 class RootNode(Node):
+    def __init__(self, node):
+        super().__init__(node)
+        capnp.lib.capnp.cleanup_global_schema_parser()
+        self.set_imports()
+        for node in self.imports:
+            self.struct_names.extend(node.struct_names)
+            self.structs_by_name.update(node.structs_by_name)
+            self.structs_by_id.update(node.structs_by_id)
+
+            self.enum_names.extend(node.enum_names)
+            self.enums_by_name.update(node.enums_by_name)
+            self.enums_by_id.update(node.enums_by_id)
+
+            self.interface_names.extend(node.interface_names)
+            self.interfaces_by_name.update(node.interfaces_by_name)
+            self.interfaces_by_id.update(node.interfaces_by_id)
+
+    def set_imports(self):
+        self.imports_by_name = {}
+        self.imports = []
+        raw_data = open(self.node.__file__, "r").readlines()
+        import_lines = [line for line in raw_data if line.startswith("using")]
+        for importline in import_lines:
+            import_name = importline.split(" ")[1]
+            import_path = importline.split("\"")[1]
+            import_path = os.path.join(os.path.dirname(self.node.__file__), import_path)
+            import_node = RootNode(capnp.load(import_path))
+            self.imports.append(import_node)
+            self.imports_by_name[import_name] = import_node
+
+
     def get_message_types(self):
         # The unit of communication in Cap'n Proto is a "message". A message is a tree of 
         # objects, with the root always being a struct.
@@ -90,6 +123,7 @@ class StructNode(Node):
         self.structs_by_id.update(self.root_node.structs_by_id)
         self.rng: RNG = rng
         self.types = { "struct": self.structs_by_id, "enum": self.enums_by_id }
+        # print(self.node.schema.node)
 
     def enumerate_fields(self):
         return [field for field in self.node.schema.node.struct.fields]
@@ -116,33 +150,59 @@ class StructNode(Node):
             self.generate_field(msg, field)
         return msg
 
-    def generate_field(self, msg, field):
+    def generate_field(self, msg, field, original_field=None):
+        fieldname = field.name
+        if self.is_union_field(field):
+            original_field = field
+            field = self.choose_union_type(field)
+            self.generate_field(getattr(msg, fieldname), field, original_field)
+            return
         typestring = self.get_type_for_field(field)
         if self._is_primitive_numerial_type(typestring):
-            setattr(msg, field.name, self.rng.type_function_map[typestring]())
+            setattr(msg, fieldname, self.rng.type_function_map[typestring]())
         elif typestring == "text":
-            setattr(msg, field.name, self.rng.getText())
+            setattr(msg, fieldname, self.rng.getText())
         elif typestring == "data":
-            setattr(msg, field.name, self.rng.getBlob(10))
+            setattr(msg, fieldname, self.rng.getBlob(10))
         elif typestring == "struct":
             nodeId = self.node.schema.node.id
             id = field.slot.type.struct.typeId
             if nodeId == id:
                 # print("recursive structure - bailing on generation of field to avoid infinite loop")
                 return
+
             typedef = self.structs_by_id[id]
             innerStruct = StructNode(typedef, self.root_node, self.rng)
-            setattr(msg, field.name, innerStruct.generate())
+            inner_msg = innerStruct.generate()
+            # Extreme jank below, this is here to accomodate imported structs, unions, and unions 
+            # that contain imported structs. I do not know why the second try is necessary, or why
+            # the redundant except that just does the original thing makes it work, reading this code,
+            # the second except should never be reached (as it would have worked the first time), but
+            # you can remove it and try it yourself if you don't believe me, it breaks unless its
+            # there.
+            try:
+                setattr(msg, fieldname, inner_msg.to_dict())
+            except capnp.lib.capnp.KjException as e:
+                if "isSetInUnion" in e.message:
+                    try:
+                        setattr(msg, fieldname, inner_msg)
+                    except capnp.lib.capnp.KjException as e:
+                        setattr(msg, fieldname, inner_msg.to_dict())
+                else:
+                    raise e
         elif typestring == "list":
             length = self.rng.getRandom(0, 10)
-            msg.init(field.name, length)
-            setattr(msg, field.name, self.generate_list(field.slot.type, length))
+            msg.init(fieldname, length)
+            setattr(msg, fieldname, self.generate_list(field.slot.type, length))
             pass
         elif typestring == "enum":
             id = field.slot.type.enum.typeId
-            typedef = self.enums_by_id[id]
-            enumerants = list(typedef.schema.enumerants.keys())
-            setattr(msg, field.name, self.rng.getEnum(enumerants))
+            try:
+                typedef = self.enums_by_id[id]
+                enumerants = list(typedef.schema.enumerants.keys())
+            except KeyError:
+                enumerants = list(self.node.schema.fields[field.name].schema.enumerants.keys())
+            setattr(msg, fieldname, self.rng.getEnum(enumerants))
 
     def generate_list(self, memberType, length):
         innerTypeString = list(memberType.list.elementType.to_dict().keys())[0]
@@ -163,6 +223,20 @@ class StructNode(Node):
             return [self.rng.getText() for _ in range(0, length)]
         if innerTypeString == "data":
             return [self.rng.getBlob(self.rng.getRandom(0, 10)) for _ in range(0, length)]
+
+    def is_union_field(self, field):
+        try:
+            field.slot.type
+        except capnp.lib.capnp.KjException as e:
+            if "isSetInUnion" in e.message:
+                return True 
+            else:
+                raise e
+        return False
+
+    def choose_union_type(self, field):
+        options = self.node.schema.fields[field.name].schema.node.struct.fields
+        return options[self.rng.getRandom(0, len(options) - 1)]
 
     def get_type_for_field(self, field) -> str:
         typestring = list(field.slot.type.to_dict().keys())[0]

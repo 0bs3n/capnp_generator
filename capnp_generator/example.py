@@ -39,16 +39,28 @@ person_node = StructNode(root_node.structs_by_name[typeName], root_node, rng)
 
 # Call generate to randomly generate all fields in the struct and output 
 # a capnp message ready for serialization or whatever
-msg = person_node.generate()
+for i in range(0, 10):
+    msg = person_node.generate()
+    print(msg)
 
-# you can override specific fields if desired
-birthdate = schema.Date.new_message()
-birthdate.year = 1994
-birthdate.day = 12
-birthdate.month = 3
-msg.birthdate = birthdate
+# you can override specific fields if desired. For
+# types defined in the same file your root node is
+# derived from, you can do it as below:
+# birthdate = schema.Date.new_message()
+# birthdate.year = 1994
+# birthdate.day = 12
+# birthdate.month = 3
+# msg.birthdate = birthdate
 
-print(msg)
+# if you need to override an imported type,
+# you'll need to either load it and access the schema
+# here (which might not work because the root node will
+# have already capnp.load'ed it and you'll get an error)
+# or just use dict/string syntax for structs/enums:
+# msg.birthdate = { "year": 1, "month": 2, "day": 3}
+
+#print(msg)
+
 
 # From here act on the message as normal, send it wherever it's meant to go
 serialized = msg.to_bytes_packed()
