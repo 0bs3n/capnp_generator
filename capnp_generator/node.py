@@ -1,8 +1,10 @@
 import capnp
 import pprint
 import os
+import sys
+import site
 import capnp.includes
-from rng import RNG
+from .rng import RNG
 
 """
 For the top level schema, the list of all top-level defined structs, 
@@ -90,13 +92,25 @@ class RootNode(Node):
     def set_imports(self):
         self.imports_by_name = {}
         self.imports = []
-        raw_data = open(self.node.__file__, "r").readlines()
+        raw_data_file = open(self.node.__file__, "r")
+        raw_data = raw_data_file.readlines()
+        raw_data_file.close()
         import_lines = [line for line in raw_data if line.startswith("using")]
         for importline in import_lines:
+            if "import" not in importline:
+                continue
             import_name = importline.split(" ")[1]
             import_path = importline.split("\"")[1]
+            if import_path.startswith("/"):
+                continue
             import_path = os.path.join(os.path.dirname(self.node.__file__), import_path)
-            import_node = RootNode(capnp.load(import_path))
+
+            sys.path.append("/usr/local/include")
+            USER_SITE_PACKAGES = [site.getusersitepackages()]
+            GLOBAL_SITE_PACKAGES = site.getsitepackages()
+            CAPNP_LIBRARY_SEARCH_PATH = USER_SITE_PACKAGES + GLOBAL_SITE_PACKAGES + sys.path
+            import_node = RootNode(capnp.load(import_path, imports=CAPNP_LIBRARY_SEARCH_PATH))
+
             self.imports.append(import_node)
             self.imports_by_name[import_name] = import_node
 
@@ -155,6 +169,11 @@ class StructNode(Node):
         if self.is_union_field(field):
             original_field = field
             field = self.choose_union_type(field)
+            # TODO: figure out why this fails with some unions
+            try:
+                getattr(msg, fieldname)
+            except Exception as e:
+                return
             self.generate_field(getattr(msg, fieldname), field, original_field)
             return
         typestring = self.get_type_for_field(field)
