@@ -1,11 +1,14 @@
 import random
 import struct
+import sys
+import math
 
 special_values = [ '<','>', '?', '>', ')', '(', '*', '&', '^', '%', '$', '#', '@', '/', '-', '+', '?', '~', '`', '|', '\\' ]
 chars = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x3d, 0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81, 0xfe, 0xff ]
 shorts = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81, 0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff ]
 ints = [ 0,1,2,3,4,5,6,7,8,9,10,11,0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81,  0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff, 0x10000, 0x10001, 0x3fffffff, 0x40000000, 0x40000001, 0x7fffffff, 0x80000000, 0x80000001, 0xffffffff ]
 qwords = [ 0,1,2,3,4,5,6,7,8,9,10,11,0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81,  0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff, 0x10000, 0x10001, 0x3fffffff, 0x40000000, 0x40000001, 0x7fffffff, 0x80000000, 0x80000001, 0xffffffff, 0x100000000, 0x100000001, 0x3fffffffffffffff, 0x4000000000000000, 0x4000000000000001, 0x7fffffffffffffff, 0x8000000000000000, 0x8000000000000001, 0xffffffffffffffff ]
+floats = [float('inf'), float('-inf'), float('nan'), 0.0, -0.0, sys.float_info.min, -sys.float_info.min, sys.float_info.max, -sys.float_info.max, math.ulp(0.0)]
 
 class RNG:
     def __init__(self, seed, step, reseed_cb=None, logger=None):
@@ -174,10 +177,24 @@ class RNG:
         return val
 
     def getFloat32(self):
-        return self.getInt32()
+        switch = self.getRandom(0, 2)
+        if switch == 0:
+            val = floats[self.getRandom(0, len(floats) - 1)]
+        elif switch == 1:
+            val = self.getInt32()
+        else:
+            val = self.getRandom(0, 0xffffffff)
+        return val
 
     def getFloat64(self):
-        return self.getInt64()
+        switch = self.getRandom(0, 2)
+        if switch == 0:
+            val = floats[self.getRandom(0, len(floats) - 1)]
+        elif switch == 1:
+            val = self.getInt64()
+        else:
+            val = self.getRandom(0, 0xffffffffffffffff)
+        return val
 
     def getRandom(self, minimum: int, maximum: int):
         return random.randint(minimum, maximum)
