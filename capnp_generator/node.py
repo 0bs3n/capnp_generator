@@ -35,6 +35,7 @@ type.schema.enumerants, which is a python dict in the format
 { enumerant_name: enumerant_value }
 """
 
+
 class Node:
     def __init__(self, root_node):
         self.struct_names = []
@@ -55,6 +56,24 @@ class Node:
                 self.struct_names.append(node.name)
                 self.structs_by_name[node.name] = nodeSchema
                 self.structs_by_id[node.id] = nodeSchema
+
+                # Here we need to do recursive checking for scoped types within structs.
+                # Each type identified in that way should be added to the *_by_id object etc.
+                # for the parent, and bubbled up eventually to the root
+                nestedNode = Node(nodeSchema)
+                self.struct_names.extend(nestedNode.struct_names)
+                self.structs_by_name.update(nestedNode.structs_by_name)
+                self.structs_by_id.update(nestedNode.structs_by_id)
+
+                self.enum_names.extend(nestedNode.enum_names)
+                self.enums_by_name.update(nestedNode.enums_by_name)
+                self.enums_by_id.update(nestedNode.enums_by_id)
+
+                self.interface_names.extend(nestedNode.interface_names)
+                self.interfaces_by_name.update(nestedNode.interfaces_by_name)
+                self.interfaces_by_id.update(nestedNode.interfaces_by_id)
+
+                print(self.structs_by_id)
             elif type(nodeSchema) == capnp.lib.capnp._EnumModule:
                 self.enum_names.append(node.name)
                 self.enums_by_name[node.name] = nodeSchema

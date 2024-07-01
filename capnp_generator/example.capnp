@@ -2,6 +2,18 @@
 
 using Types = import "example_import.capnp";
 
+struct ExposesInternalStructs {
+  struct ExposesInternalEnums {
+    enum TestEnum {
+      zero @0;
+      one @1;
+      two @2;
+    }
+    internalEnum @0 :TestEnum;
+  }
+  internalStruct @0 :ExposesInternalEnums;
+}
+
 struct Person {
   name @0 :Text;
   email @1 :Text;
@@ -44,6 +56,7 @@ struct Person {
     importEmployed @27 :Types.Date;
     importEmployedEnum @26 :Types.AddressType;
   }
+  localImport @28 :ExposesInternalStructs.ExposesInternalEnums.TestEnum;
 }
 
 struct Company {
