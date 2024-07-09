@@ -8,7 +8,11 @@ chars = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x3d, 0x3f, 0x40, 0x41, 0x7f, 0x
 shorts = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81, 0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff ]
 ints = [ 0,1,2,3,4,5,6,7,8,9,10,11,0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81,  0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff, 0x10000, 0x10001, 0x3fffffff, 0x40000000, 0x40000001, 0x7fffffff, 0x80000000, 0x80000001, 0xffffffff ]
 qwords = [ 0,1,2,3,4,5,6,7,8,9,10,11,0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81,  0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff, 0x10000, 0x10001, 0x3fffffff, 0x40000000, 0x40000001, 0x7fffffff, 0x80000000, 0x80000001, 0xffffffff, 0x100000000, 0x100000001, 0x3fffffffffffffff, 0x4000000000000000, 0x4000000000000001, 0x7fffffffffffffff, 0x8000000000000000, 0x8000000000000001, 0xffffffffffffffff ]
-floats = [float('inf'), float('-inf'), float('nan'), 0.0, -0.0, sys.float_info.min, -sys.float_info.min, sys.float_info.max, -sys.float_info.max, math.ulp(0.0)]
+try:
+    floats = [float('inf'), float('-inf'), float('nan'), 0.0, -0.0, sys.float_info.min, -sys.float_info.min, sys.float_info.max, -sys.float_info.max, math.ulp(0.0)]
+except AttributeError:
+    floats = [float('inf'), float('-inf'), float('nan'), 0.0, -0.0, sys.float_info.min, -sys.float_info.min, sys.float_info.max, -sys.float_info.max]
+
 
 class RNG:
     def __init__(self, seed, step, reseed_cb=None, logger=None):
@@ -50,11 +54,11 @@ class RNG:
         random.seed(seed)
 
     def reset(self, seed):
+        if self.logger is not None:
+            self.logger.info(f"\nRNG hit {self.step} iterations matching configured step count, reseeding with new seed {seed:#x} and resetting\n")
         self.set_seed(seed)
         if self.reseed_cb is not None:
-            self.reseed_cb()
-        if self.logger is not None:
-            self.logger.info(f"RNG hit defined step count {self.step} at {self.iterations} iterations, reseeding with {seed} and resetting")
+            self.reseed_cb(self)
 
     def _twos_comp(self, val, mask, size):
         if ((val & mask) & (1 << (size - 1))):
