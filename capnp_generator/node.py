@@ -73,7 +73,6 @@ class Node:
                 self.interfaces_by_name.update(nestedNode.interfaces_by_name)
                 self.interfaces_by_id.update(nestedNode.interfaces_by_id)
 
-                print(self.structs_by_id)
             elif type(nodeSchema) == capnp.lib.capnp._EnumModule:
                 self.enum_names.append(node.name)
                 self.enums_by_name[node.name] = nodeSchema
