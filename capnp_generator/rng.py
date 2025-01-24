@@ -21,6 +21,7 @@ class RNG:
         self.step = step
         random.seed(seed)
         self.reseed_cb = reseed_cb
+        self.logger = logger
         self.type_function_map = {
             "uint8":   self.getUInt8,
             "uint16":  self.getUInt16,
