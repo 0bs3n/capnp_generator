@@ -248,17 +248,10 @@ class StructNode(Node):
                 else:
                     raise e
         elif typestring == "list":
-            try:
-                length = self.rng.getRandom(0, 10)
-                msg.init(fieldname, length)
-                self.generate_list(msg, field, length)
-                pass
-            except Exception as e:
-                print((self.structs_by_id[field.slot.type.list.elementType.struct.typeId].schema.node))
-                print(f"fieldname: {fieldname}")
-                print(f"Type for list: {field.slot.type}")
-                print(l)
-                raise e
+            length = self.rng.getRandom(0, 10)
+            # msg.init(fieldname, length)
+            self.generate_list(msg, field, length)
+            pass
         elif typestring == "enum":
             id = field.slot.type.enum.typeId
             typedef = self.enums_by_id[id]
@@ -276,18 +269,36 @@ class StructNode(Node):
             if innerTypeString == "struct":
                 l = msg.init(field.name, length)
                 structs = [StructNode(innerType, self.root_node, self.rng).generate() for _ in range(0, length)]
-                for i in range(length):
-                    for field in l[i].schema.fields:
-                        setattr(l[i], field, getattr(structs[i], field))
+                self.set_structs_in_array(l, structs, length)
+                # IF it is a list of structs, and the struct type that makes up the elements
+                # contains a list as one of its fields, then those list fields must be
+                # manually initialized. This must be recursive.
+                for i, elem in enumerate(l):
+                    for f in elem.schema.node.struct.fields:
+                        nested_struct_field_type = self.get_type_for_field(f)
+                        if nested_struct_field_type == "list":
+                            innerLength = len(getattr(structs[i], f.name))
+                            inner_l = elem.init(f.name, innerLength)
+                            self.set_structs_in_array(inner_l, getattr(structs[i], f.name), innerLength)
+
+
             elif innerTypeString == "enum":
                 setattr(msg, field.name, [self.rng.getEnum(list(innerType.schema.enumerants.keys())) for _ in range(0, length)])
         if innerTypeString == "list":
             innerLength = self.rng.getRandom(0, 10)
-            setattr(msg, field.name, [self.generate_list(memberType.list.elementType, innerLength) for _ in range(0, length)])
+            # TODO
+            # setattr(msg, field.name, [self.generate_list(msg, field, innerLength) for _ in range(0, length)])
+            setattr(msg, field.name, [])
         if innerTypeString == "text":
             setattr(msg, field.name, [self.rng.getText() for _ in range(0, length)])
         if innerTypeString == "data":
             setattr(msg, field.name, [self.rng.getBlob(self.rng.getRandom(0, 10)) for _ in range(0, length)])
+
+    def set_structs_in_array(self, d, s, length):
+        for i in range(length):
+            for key in d[i].to_dict().keys():
+                setattr(d[i], key, getattr(s[i], key))
+
 
     def is_union_field(self, field):
         try:
