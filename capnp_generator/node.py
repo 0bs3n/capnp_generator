@@ -3,6 +3,7 @@ import pprint
 import os
 import sys
 import site
+import importlib
 import capnp.includes
 from .rng import RNG
 
@@ -115,19 +116,36 @@ class RootNode(Node):
         raw_data_file.close()
         import_lines = [line for line in raw_data if line.startswith("using")]
         for importline in import_lines:
+            # print(importline)
             if "import" not in importline:
                 continue
             import_name = importline.split(" ")[1]
             import_path = importline.split("\"")[1]
-            if import_path.startswith("/"):
+            if import_path.startswith("/capnp/"):
                 continue
-            import_path = os.path.join(os.path.dirname(self.node.__file__), import_path)
+            if "/" in import_path:
+                import_path = import_path[1:]
 
-            sys.path.append("/usr/local/include")
-            USER_SITE_PACKAGES = [site.getusersitepackages()]
-            GLOBAL_SITE_PACKAGES = site.getsitepackages()
-            CAPNP_LIBRARY_SEARCH_PATH = USER_SITE_PACKAGES + GLOBAL_SITE_PACKAGES + sys.path
-            import_node = RootNode(capnp.load(import_path, imports=CAPNP_LIBRARY_SEARCH_PATH))
+                import_path = import_path.replace("/", ".").replace(".capnp", "_capnp")
+                import_node = RootNode(importlib.import_module(import_path))
+            else:
+                import_path = os.path.join(os.path.dirname(self.node.__file__), import_path)
+                sys.path.append("/usr/local/include")
+                USER_SITE_PACKAGES = [site.getusersitepackages()]
+                GLOBAL_SITE_PACKAGES = site.getsitepackages()
+                CAPNP_LIBRARY_SEARCH_PATH = USER_SITE_PACKAGES + GLOBAL_SITE_PACKAGES + sys.path
+                import_node = RootNode(capnp.load(import_path, imports=CAPNP_LIBRARY_SEARCH_PATH))
+
+                # print(sys.path)
+                # import_path = os.path.join(sys.path, import_path)
+            # else:
+                # import_path = os.path.join(os.path.dirname(self.node.__file__), import_path)
+
+            # sys.path.append("/usr/local/include")
+            # USER_SITE_PACKAGES = [site.getusersitepackages()]
+            # GLOBAL_SITE_PACKAGES = site.getsitepackages()
+            # CAPNP_LIBRARY_SEARCH_PATH = USER_SITE_PACKAGES + GLOBAL_SITE_PACKAGES + sys.path
+            # import_node = RootNode(capnp.load(import_path, imports=CAPNP_LIBRARY_SEARCH_PATH))
 
             self.imports.append(import_node)
             self.imports_by_name[import_name] = import_node
@@ -208,6 +226,8 @@ class StructNode(Node):
                 # print("recursive structure - bailing on generation of field to avoid infinite loop")
                 return
 
+            # for s in self.structs_by_id:
+                # print(self.structs_by_id[s].schema.node)
             typedef = self.structs_by_id[id]
             innerStruct = StructNode(typedef, self.root_node, self.rng)
             inner_msg = innerStruct.generate()
@@ -228,35 +248,46 @@ class StructNode(Node):
                 else:
                     raise e
         elif typestring == "list":
-            length = self.rng.getRandom(0, 10)
-            msg.init(fieldname, length)
-            setattr(msg, fieldname, self.generate_list(field.slot.type, length))
-            pass
+            try:
+                length = self.rng.getRandom(0, 10)
+                msg.init(fieldname, length)
+                self.generate_list(msg, field, length)
+                pass
+            except Exception as e:
+                print((self.structs_by_id[field.slot.type.list.elementType.struct.typeId].schema.node))
+                print(f"fieldname: {fieldname}")
+                print(f"Type for list: {field.slot.type}")
+                print(l)
+                raise e
         elif typestring == "enum":
             id = field.slot.type.enum.typeId
             typedef = self.enums_by_id[id]
             enumerants = list(typedef.schema.enumerants.keys())
             setattr(msg, fieldname, self.rng.getEnum(enumerants))
 
-    def generate_list(self, memberType, length):
+    def generate_list(self, msg, field, length):
+        memberType = field.slot.type
         innerTypeString = list(memberType.list.elementType.to_dict().keys())[0]
         if self._is_primitive_numerial_type(innerTypeString):
-            return self.rng.getList(innerTypeString, length)
+            setattr(msg, field.name, self.rng.getList(innerTypeString, length))
         if innerTypeString == "struct" or innerTypeString == "enum":
             innerTypeId = getattr(memberType.list.elementType, innerTypeString).typeId
             innerType = self.types[innerTypeString][innerTypeId]
             if innerTypeString == "struct":
-                return [StructNode(innerType, self.root_node, self.rng)
-                        .generate() for _ in range(0, length)]
+                l = msg.init(field.name, length)
+                structs = [StructNode(innerType, self.root_node, self.rng).generate() for _ in range(0, length)]
+                for i in range(length):
+                    for field in l[i].schema.fields:
+                        setattr(l[i], field, getattr(structs[i], field))
             elif innerTypeString == "enum":
-                return [self.rng.getEnum(list(innerType.schema.enumerants.keys())) for _ in range(0, length)]
+                setattr(msg, field.name, [self.rng.getEnum(list(innerType.schema.enumerants.keys())) for _ in range(0, length)])
         if innerTypeString == "list":
             innerLength = self.rng.getRandom(0, 10)
-            return [self.generate_list(memberType.list.elementType, innerLength) for _ in range(0, length)]
+            setattr(msg, field.name, [self.generate_list(memberType.list.elementType, innerLength) for _ in range(0, length)])
         if innerTypeString == "text":
-            return [self.rng.getText() for _ in range(0, length)]
+            setattr(msg, field.name, [self.rng.getText() for _ in range(0, length)])
         if innerTypeString == "data":
-            return [self.rng.getBlob(self.rng.getRandom(0, 10)) for _ in range(0, length)]
+            setattr(msg, field.name, [self.rng.getBlob(self.rng.getRandom(0, 10)) for _ in range(0, length)])
 
     def is_union_field(self, field):
         try:
